@@ -21,7 +21,7 @@ import rasterio
 from rasterio.transform import rowcol
 
 from mst_gis.utils.logging import Timer, print_success, print_warning, print_error
-from mst_gis.utils.validation import ValidationError, validate_geodataframe_columns
+from mst_gis.utils.validation import ValidationError, validate_geodataframe
 
 
 class RasterPreloader:
@@ -311,7 +311,7 @@ def extract_data_for_receivers(
     if len(receivers_gdf) == 0:
         raise ValidationError("receivers_gdf is empty")
     
-    validate_geodataframe_columns(receivers_gdf, ["geometry"])
+    validate_geodataframe(receivers_gdf, ["geometry"])
     
     # Make a copy to avoid modifying input
     result_gdf = receivers_gdf.copy()

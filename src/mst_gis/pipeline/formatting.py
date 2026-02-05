@@ -15,7 +15,7 @@ import pandas as pd
 import numpy as np
 
 from mst_gis.utils.logging import Timer, print_success, print_warning
-from mst_gis.utils.validation import ValidationError, validate_geodataframe_columns
+from mst_gis.utils.validation import ValidationError, validate_geodataframe
 
 
 class ProfileFormatter:
@@ -63,7 +63,7 @@ class ProfileFormatter:
             raise ValidationError("receivers_gdf must be a GeoDataFrame")
         
         required_cols = ["geometry", "azimuth_deg", "distance_km", "h", "Ct", "R", "zone"]
-        validate_geodataframe_columns(self.receivers_gdf, required_cols)
+        validate_geodataframe(self.receivers_gdf, required_cols)
         
         if not 0.03 <= frequency_ghz <= 6:
             raise ValidationError(f"Frequency must be 0.03-6 GHz, got {frequency_ghz}")
