@@ -255,6 +255,109 @@ def test_receiver_points():
         return False
 
 
+def test_zone_reference_data():
+    """Test that zones GeoJSON reference file exists and is valid."""
+    print("\n" + "="*60)
+    print("TEST 9: Validate Zone Reference Data")
+    print("="*60)
+    
+    zones_path = project_root / 'data' / 'input' / 'reference' / 'zones_map_BR.json'
+    
+    if not zones_path.exists():
+        print(f"  ✗ Zones GeoJSON not found at {zones_path}")
+        return False
+    
+    try:
+        with open(zones_path) as f:
+            zones_geojson = json.load(f)
+        
+        if 'features' not in zones_geojson:
+            print(f"  ✗ Invalid GeoJSON: no 'features' key")
+            return False
+        
+        num_features = len(zones_geojson['features'])
+        print(f"  ✓ Zones GeoJSON loaded: {num_features} features")
+        
+        # Load as GeoDataFrame
+        gdf_zones = gpd.GeoDataFrame.from_features(zones_geojson['features'])
+        gdf_zones = gdf_zones.set_crs('EPSG:4326')
+        
+        # Check zone types
+        zone_types = set(gdf_zones['zone_type_id'].unique())
+        expected_zones = {1, 3, 4}
+        
+        if zone_types != expected_zones:
+            print(f"  ✗ Invalid zone types. Expected {expected_zones}, got {zone_types}")
+            return False
+        
+        zone_counts = gdf_zones['zone_type_id'].value_counts()
+        print(f"  ✓ Zone types: 1 (Sea): {zone_counts.get(1, 0)}, 3 (Coastal): {zone_counts.get(3, 0)}, 4 (Inland): {zone_counts.get(4, 0)}")
+        
+        return True
+    except json.JSONDecodeError as e:
+        print(f"  ✗ Invalid JSON in zones file: {e}")
+        return False
+    except Exception as e:
+        print(f"  ✗ Zone reference error: {e}")
+        return False
+
+
+def test_zone_extraction_logic():
+    """Test that point-in-polygon zone extraction works correctly."""
+    print("\n" + "="*60)
+    print("TEST 10: Validate Zone Extraction Logic")
+    print("="*60)
+    
+    zones_path = project_root / 'data' / 'input' / 'reference' / 'zones_map_BR.json'
+    
+    if not zones_path.exists():
+        print(f"  ⚠ Zones GeoJSON not found, skipping test")
+        return True  # Not a failure, just skip
+    
+    try:
+        from shapely.geometry import Point
+        
+        # Load zones
+        with open(zones_path) as f:
+            zones_geojson = json.load(f)
+        gdf_zones = gpd.GeoDataFrame.from_features(zones_geojson['features'])
+        gdf_zones = gdf_zones.set_crs('EPSG:4326')
+        
+        # Create test points
+        test_points = gpd.GeoDataFrame([
+            {'rx_id': 1, 'geometry': Point(-13.40694, 9.345), 'zone': 0},   # Senegal (Inland)
+            {'rx_id': 2, 'geometry': Point(-43.1728, -22.9068), 'zone': 0}, # Rio de Janeiro (Coastal)
+        ], crs='EPSG:4326')
+        
+        # Extract zones using point-in-polygon
+        for idx in test_points.index:
+            point = test_points.loc[idx, 'geometry']
+            for _, zone_row in gdf_zones.iterrows():
+                if zone_row.geometry.contains(point):
+                    test_points.loc[idx, 'zone'] = int(zone_row['zone_type_id'])
+                    break
+        
+        # Verify results
+        results_ok = True
+        
+        if test_points.loc[0, 'zone'] == 4:
+            print(f"  ✓ Senegal point: zone 4 (Inland)")
+        else:
+            print(f"  ✗ Senegal point: expected zone 4, got {test_points.loc[0, 'zone']}")
+            results_ok = False
+        
+        if test_points.loc[1, 'zone'] == 3:
+            print(f"  ✓ Rio de Janeiro point: zone 3 (Coastal)")
+        else:
+            print(f"  ✗ Rio de Janeiro point: expected zone 3, got {test_points.loc[1, 'zone']}")
+            results_ok = False
+        
+        return results_ok
+    except Exception as e:
+        print(f"  ✗ Zone extraction error: {e}")
+        return False
+
+
 def main():
     """Run all tests and report results."""
     print("\n" + "="*70)
@@ -270,6 +373,8 @@ def main():
         ('Elevation Cache', test_elevation_cache),
         ('Land Cover Cache', test_landcover_cache),
         ('Receiver Points', test_receiver_points),
+        ('Zone Reference Data', test_zone_reference_data),
+        ('Zone Extraction Logic', test_zone_extraction_logic),
     ]
     
     results = {}
