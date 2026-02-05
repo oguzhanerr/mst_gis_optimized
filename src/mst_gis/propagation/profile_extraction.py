@@ -258,6 +258,11 @@ def generate_profile_points(
     tif_ds=None,
     dem_ds=None,
     skip_seed: bool = False,
+    tif_band_data=None,
+    tif_transform=None,
+    tif_nodata=None,
+    dem_band_data=None,
+    dem_transform=None,
 ) -> gpd.GeoDataFrame:
     """
     Generate profile points from TX to RX at given azimuth.
@@ -277,6 +282,11 @@ def generate_profile_points(
         tif_ds: Pre-opened rasterio dataset for tif_path (optional, for performance)
         dem_ds: Pre-opened rasterio dataset for DEM VRT (optional, for performance)
         skip_seed: If True, skip elevation.seed() call (use when seeding done once before loop)
+        tif_band_data: Pre-loaded TIF band array (NumPy array, optional for performance)
+        tif_transform: Rasterio transform for tif_band_data (required if tif_band_data provided)
+        tif_nodata: Nodata value for tif_band_data (optional)
+        dem_band_data: Pre-loaded DEM band array (NumPy array, optional for performance)
+        dem_transform: Rasterio transform for dem_band_data (required if dem_band_data provided)
         
     Returns:
         GeoDataFrame with profile points and extracted data
@@ -360,7 +370,20 @@ def generate_profile_points(
 
     # Extract land cover codes from GeoTIFF
     ct_codes = []
-    if tif_ds is None:
+    if tif_band_data is not None and tif_transform is not None:
+        # Use pre-loaded array with transform (fastest path - no file I/O)
+        for geom in gdf.geometry:
+            row, col = rasterio.transform.rowcol(tif_transform, geom.x, geom.y)
+            
+            if 0 <= row < tif_band_data.shape[0] and 0 <= col < tif_band_data.shape[1]:
+                val = int(tif_band_data[int(row), int(col)])
+                if tif_nodata is not None and val == tif_nodata:
+                    val = 254
+            else:
+                val = 254  # outside tile bounds
+            
+            ct_codes.append(val)
+    elif tif_ds is None:
         # Open dataset if not provided
         with rasterio.open(tif_path) as ds:
             band = ds.read(1)  # uint8 codes
@@ -400,7 +423,16 @@ def generate_profile_points(
 
     # Sample elevation from VRT file
     h = []
-    if dem_ds is not None:
+    if dem_band_data is not None and dem_transform is not None:
+        # Use pre-loaded DEM array (fastest path - no file I/O)
+        for geom in gdf.geometry:
+            row, col = rasterio.transform.rowcol(dem_transform, geom.x, geom.y)
+            if 0 <= row < dem_band_data.shape[0] and 0 <= col < dem_band_data.shape[1]:
+                z = float(dem_band_data[int(row), int(col)])
+            else:
+                z = 0.0
+            h.append(z)
+    elif dem_ds is not None:
         # Use pre-opened DEM dataset
         dem_band = dem_ds.read(1)
         for geom in gdf.geometry:
