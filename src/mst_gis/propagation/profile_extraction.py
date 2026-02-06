@@ -17,6 +17,42 @@ from pathlib import Path
 from rasterio.io import MemoryFile
 from shapely.geometry import Point
 
+# Initialize SRTM data handler (lazy-loaded on first use)
+_srtm_data = None
+_srtm_cache_dir = None
+
+def set_srtm_cache_dir(cache_dir: str):
+    """Set custom SRTM cache directory.
+    
+    Args:
+        cache_dir: Path to directory for caching SRTM HGT files
+    """
+    global _srtm_cache_dir
+    _srtm_cache_dir = cache_dir
+    # Clear cached data to force re-initialization with new path
+    global _srtm_data
+    _srtm_data = None
+
+def _get_srtm_data():
+    """Get or initialize SRTM data handler (cached).
+    
+    Uses custom cache directory if set via set_srtm_cache_dir(),
+    otherwise uses SRTM.py default (~/.cache/srtm/).
+    """
+    global _srtm_data
+    if _srtm_data is None:
+        try:
+            import srtm
+            if _srtm_cache_dir:
+                # Create cache directory if needed
+                Path(_srtm_cache_dir).mkdir(parents=True, exist_ok=True)
+                _srtm_data = srtm.get_data(local_cache_dir=_srtm_cache_dir)
+            else:
+                _srtm_data = srtm.get_data()
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize SRTM data: {e}")
+    return _srtm_data
+
 
 def meters_to_deg(lat: float, meters: float) -> Tuple[float, float]:
     """
@@ -263,6 +299,8 @@ def generate_profile_points(
     tif_nodata=None,
     dem_band_data=None,
     dem_transform=None,
+    srtm_min_elev: float = 0.0,
+    srtm_max_elev: float = 9000.0,
 ) -> gpd.GeoDataFrame:
     """
     Generate profile points from TX to RX at given azimuth.
@@ -287,6 +325,8 @@ def generate_profile_points(
         tif_nodata: Nodata value for tif_band_data (optional)
         dem_band_data: Pre-loaded DEM band array (NumPy array, optional for performance)
         dem_transform: Rasterio transform for dem_band_data (required if dem_band_data provided)
+        srtm_min_elev: Minimum valid elevation in meters (below this = no-data). Default: 0m
+        srtm_max_elev: Maximum valid elevation in meters (above this = no-data). Default: 9000m
         
     Returns:
         GeoDataFrame with profile points and extracted data
@@ -296,21 +336,22 @@ def generate_profile_points(
         FileNotFoundError: If tif_path or zones_path don't exist
     """
     try:
-        import elevation
+        import srtm
     except ImportError:
-        raise ImportError("elevation package required for profile generation")
+        raise ImportError("SRTM.py package required for elevation extraction")
 
     if n_points < 2:
         raise ValueError("n_points must be >= 2")
 
-    # Seed elevation data for this area (downloads/caches tiles as needed)
-    # Note: This may fail if GDAL is not installed; elevation will fallback to 0
+    # Initialize SRTM elevation data source (auto-downloads tiles as needed)
+    # Caches SRTM tiles in ~/.cache/srtm by default
+    srtm_data = None
     if not skip_seed:
         try:
-            bounds = [tx_lon - 0.1, tx_lat - 0.1, tx_lon + 0.1, tx_lat + 0.1]
-            elevation.seed(bounds=bounds, max_download_tiles=9)
+            # Get SRTM data handler - will auto-download missing tiles
+            srtm_data = srtm.get_data()
         except Exception as seed_err:
-            print(f"Warning: Could not seed elevation data ({seed_err}), will use fallback")
+            print(f"Warning: Could not initialize SRTM data ({seed_err}), will use fallback")
 
     # Create transmitter point in WGS84
     tx_gdf = gpd.GeoDataFrame(geometry=[Point(tx_lon, tx_lat)], crs="EPSG:4326")
@@ -418,10 +459,13 @@ def generate_profile_points(
             ct_codes.append(val)
 
     gdf["ct"] = ct_codes  # raw land cover codes
-    gdf["Ct"] = gdf["ct"].map(lambda c: lcm10_to_ct.get(c, 2))
-    gdf["R"] = gdf["Ct"].map(lambda ct: ct_to_r.get(ct, 0)).astype(int)
+    # Convert dict keys from string (JSON) to int for proper lookup
+    lcm10_to_ct_int = {int(k): v for k, v in lcm10_to_ct.items()}
+    ct_to_r_int = {int(k): v for k, v in ct_to_r.items()}
+    gdf["Ct"] = gdf["ct"].map(lambda c: lcm10_to_ct_int.get(c, 2))
+    gdf["R"] = gdf["Ct"].map(lambda ct: ct_to_r_int.get(ct, 0)).astype(int)
 
-    # Sample elevation from VRT file
+    # Sample elevation using SRTM.py library
     h = []
     if dem_band_data is not None and dem_transform is not None:
         # Use pre-loaded DEM array (fastest path - no file I/O)
@@ -443,28 +487,30 @@ def generate_profile_points(
                 z = 0.0
             h.append(z)
     else:
-        # Open DEM if not provided
-        cache_dir = elevation.CACHE_DIR
-        vrt_path = Path(cache_dir) / "SRTM1" / "SRTM1.vrt"
-        
-        if vrt_path.exists():
-            try:
-                with rasterio.open(str(vrt_path)) as dem:
-                    dem_band = dem.read(1)
-                    for geom in gdf.geometry:
-                        row, col = dem.index(geom.x, geom.y)
-                        if 0 <= row < dem.height and 0 <= col < dem.width:
-                            z = float(dem_band[int(row), int(col)])
-                        else:
-                            z = 0.0
-                        h.append(z)
-            except Exception as e:
-                print(f"Warning: Could not read DEM VRT ({e}), using 0 elevation")
-                h = [0.0] * len(gdf)
-        else:
-            # Fallback: use zero elevation if VRT not available
-            print(f"Warning: DEM VRT not found at {vrt_path}, using 0 elevation")
+        # Use SRTM.py library to get elevation at each point
+        # This handles missing data properly (returns None for voids)
+        try:
+            srtm_data = _get_srtm_data()
+        except Exception as e:
+            print(f"Warning: Could not initialize SRTM data ({e}), using 0 elevation")
             h = [0.0] * len(gdf)
+            gdf["h"] = h
+            return gdf
+        
+        for geom in gdf.geometry:
+            try:
+                # get_elevation returns elevation in meters or None for voids
+                z = srtm_data.get_elevation(geom.y, geom.x)
+                if z is None:
+                    # Handle voids (missing data) - use 0 as fallback
+                    z = 0.0
+                elif z < srtm_min_elev or z > srtm_max_elev:
+                    # Filter out invalid elevations (suspected no-data)
+                    z = 0.0
+            except Exception as e:
+                print(f"Warning: Could not get elevation at ({geom.y:.4f}, {geom.x:.4f}): {e}")
+                z = 0.0
+            h.append(z)
 
     gdf["h"] = h
     return gdf

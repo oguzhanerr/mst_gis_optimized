@@ -17,7 +17,7 @@ shapely>=1.7.0
 
 # Data acquisition
 requests>=2.26.0
-elevation>=1.1.0
+SRTM.py>=0.3.7
 certifi>=2024.0.0
 
 # Development and testing

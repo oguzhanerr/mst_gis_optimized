@@ -13,6 +13,6 @@ setup(
         "shapely",
         "rasterio",
         "requests",
-        "elevation",
+        "SRTM.py",
     ],
 )

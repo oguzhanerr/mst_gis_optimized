@@ -14,7 +14,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 # Install dependencies
-pip install numpy geojson psutil matplotlib
+pip install -r requirements.txt
 
 # Install Py1812 from local source (required)
 pip install -e ./github_Py1812/Py1812
@@ -25,6 +25,17 @@ python scripts/run_batch_processor.py
 # Generate uniformly distributed receiver points using phyllotaxis pattern
 python scripts/generate_receiver_points.py <lat> <lon> <num_points> --scale <meters> --geojson --output <file>
 ```
+
+## Elevation Data
+
+**CRITICAL**: As of this update, elevation extraction uses **SRTM.py** (replaces old `elevation` library) for proper nodata handling. 
+
+**Phase 0** now:
+1. Downloads SRTM1 30m HGT tile for your area (~30-45 sec)
+2. Caches to: `data/intermediate/elevation_cache/N09W014.hgt`
+3. Pre-loads tile into memory as array for fast Phase 3 access
+
+**Phase 3** uses the pre-loaded array directly (no additional downloads). Elevation values are filtered to [0, 9000] meters (configurable via `srtm_min_elev`, `srtm_max_elev` in `profile_extraction.py`).
 
 ## Validation
 
