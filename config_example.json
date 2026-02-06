@@ -14,7 +14,7 @@
   "RECEIVER_GENERATION": {
     "max_distance_km": 11,
     "azimuth_step": 10,
-    "distance_step": 0.03,
+    "distance_step": 1,
     "sampling_resolution": 30
   },
   "SENTINEL_HUB": {
