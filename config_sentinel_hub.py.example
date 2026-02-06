@@ -1,0 +1,64 @@
+"""
+Sentinel Hub API Configuration
+================================
+
+TEMPLATE FILE - Copy this to config_sentinel_hub.py and fill in YOUR credentials.
+
+DO NOT commit config_sentinel_hub.py to version control!
+It is already in .gitignore.
+
+Setup Instructions:
+===================
+1. Copy this file:
+   cp config_sentinel_hub.py.example config_sentinel_hub.py
+
+2. Add your credentials from https://dataspace.copernicus.eu/
+
+3. The file will use environment variables as fallback:
+   export SH_CLIENT_ID='your-client-id'
+   export SH_CLIENT_SECRET='your-client-secret'
+"""
+
+import os
+from typing import Optional
+
+# Sentinel Hub OAuth2 Credentials
+# Get these from: https://dataspace.copernicus.eu/
+# Or set via environment variables: SH_CLIENT_ID, SH_CLIENT_SECRET
+SH_CLIENT_ID = os.environ.get('SH_CLIENT_ID', 'YOUR-CLIENT-ID-HERE')
+SH_CLIENT_SECRET = os.environ.get('SH_CLIENT_SECRET', 'YOUR-CLIENT-SECRET-HERE')
+
+# Copernicus Dataspace API Endpoints
+TOKEN_URL = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+PROCESS_URL = "https://sh.dataspace.copernicus.eu/api/v1/process"
+
+# CLMS Land Cover Collection
+# CLMS Land Cover 10m Annual V1 (LCM Global 10m Yearly V1)
+COLLECTION_ID = "828f6b20-8ffd-48f8-a1da-fefd271456db"
+
+# Default settings
+DEFAULT_YEAR = 2020
+DEFAULT_BUFFER_M = 11000  # 11 km buffer
+DEFAULT_CHIP_PX = 256  # 256x256 pixel chip
+
+
+def validate_credentials() -> bool:
+    """Check if API credentials are available."""
+    if not SH_CLIENT_ID or SH_CLIENT_ID == 'YOUR-CLIENT-ID-HERE':
+        raise ValueError(
+            "Sentinel Hub credentials not found!\n"
+            "Option 1: Edit config_sentinel_hub.py with your credentials\n"
+            "Option 2: Set environment variables:\n"
+            "  export SH_CLIENT_ID='your-client-id'\n"
+            "  export SH_CLIENT_SECRET='your-client-secret'\n"
+            "Get credentials from: https://dataspace.copernicus.eu/"
+        )
+    if not SH_CLIENT_SECRET or SH_CLIENT_SECRET == 'YOUR-CLIENT-SECRET-HERE':
+        raise ValueError(
+            "Sentinel Hub credentials incomplete - SH_CLIENT_SECRET not set"
+        )
+    return True
+
+
+# Usage example:
+# from config_sentinel_hub import SH_CLIENT_ID, SH_CLIENT_SECRET, TOKEN_URL

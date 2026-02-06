@@ -95,6 +95,14 @@ class ProfileFormatter:
             ct_values = subset['Ct'].tolist()
             zones = subset['zone'].tolist()
             
+            # P.1812 requires distance to start at 0 (transmitter point)
+            # Prepend TX point with properties from first receiver point
+            distances = [0] + distances
+            heights = [heights[0]] + heights  # TX height same as first RX
+            r_values = [r_values[0]] + r_values  # TX resistance same as first point
+            ct_values = [ct_values[0]] + ct_values  # TX land cover same as first point
+            zones = [zones[0]] + zones  # TX zone same as first point
+            
             # Get TX/RX coordinates (first and last points on the profile)
             geom_0 = subset.geometry.iloc[0]
             geom_last = subset.geometry.iloc[-1]
